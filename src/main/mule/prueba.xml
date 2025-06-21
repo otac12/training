@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:api-gateway="http://www.mulesoft.org/schema/mule/api-gateway" xmlns:secure-properties="http://www.mulesoft.org/schema/mule/secure-properties"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/secure-properties http://www.mulesoft.org/schema/mule/secure-properties/current/mule-secure-properties.xsd
+http://www.mulesoft.org/schema/mule/api-gateway http://www.mulesoft.org/schema/mule/api-gateway/current/mule-api-gateway.xsd">
+	<db:config name="Database_Config" doc:name="Database Config" doc:id="53c8a0bd-b762-467a-ab8c-1b2933c85a7f" >
+		<db:my-sql-connection host="${host}" port="${port}" user="${secure::user}" password="mule" database="${db}" />
+	</db:config>
+	
+	<configuration-properties doc:name="Configuration properties" doc:id="27ea7159-47ea-49c0-a443-33ecef1665f0" file="${env}.properties" />
+	<global-property doc:name="Global Property" doc:id="58acfa9f-a01f-4ae2-8d31-344400059719" name="env" value="local" />
+	<secure-properties:config name="Secure_Properties_Config" doc:name="Secure Properties Config" doc:id="7e885621-7a29-4a62-aedf-514ef2073c3b" file="${env}.secure.properties" key="${key}" >
+		<secure-properties:encrypt algorithm="Blowfish" />
+	</secure-properties:config>
+	<global-property doc:name="Global Property" doc:id="0c332512-2440-44bc-bc2d-fbde61a74550" name="key" value="Tonatiuh" />
+	<api-gateway:autodiscovery apiId="${api.id}" ignoreBasePath="true" doc:name="API Autodiscovery" doc:id="cf727006-9d4f-46f0-8b55-aadbd422c863" flowRef="GET_Data1" />
+	<flow name="POST_Data" doc:id="865225cf-6efa-4cbe-b8c4-6f1ff1034f23" >
+		<http:listener doc:name="Listener" doc:id="19b7ca2d-3d1b-4894-b25c-5f1935e5ca64" config-ref="HTTP_Listener_config" path="/api/v1/sps/customers" allowedMethods="POST"/>
+		<choice doc:name="Choice" doc:id="f67c8e5f-4c6f-4f8b-bb94-4a7c1fc40732" >
+			<when expression="#[attributes != null and &#10;attributes.headers != null and &#10;attributes.headers.'content-type' != null and &#10;(attributes.headers.'content-type' == 'application/json' or&#10;attributes.headers.'content-type' == 'application/json;charset=UTF-8')]">
+				<try doc:name="Try" doc:id="7e3e9340-0cdb-4eba-9a79-ba66a851b9af" >
+					<db:insert doc:name="INSERT" doc:id="0d11063f-94cd-4279-8a46-a18da605f0c2" config-ref="Database_Config">
+					<db:sql><![CDATA[INSERT INTO customers (first_name, last_name, email, company) VALUES (:first_name, :last_name, :email, :company)
+]]></db:sql>
+					<db:input-parameters><![CDATA[#[%dw 2.0
+output application/java
+---
+{
+  first_name: payload.FirstName,
+  last_name: payload.LastName,
+  email: payload.Email,
+  company: payload.Company
+}]]]></db:input-parameters>
+				</db:insert>
+					<set-payload value='{"message":"Se subio el registro"}' doc:name="Set Payload" doc:id="042c66d0-042a-4b35-884e-624217e6e55d" />
+					<ee:transform doc:name="Transform Message" doc:id="f1d6314d-73f4-452f-aa89-33d48d66e679" >
+						<ee:message >
+							<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+read(payload, "application/json")]]></ee:set-payload>
+						</ee:message>
+					</ee:transform>
+					<error-handler>
+						<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="be43f8ab-5111-4bc3-879b-82f68e7ef76b" >
+							<set-payload value='{"error": "No se realizo el registro"}' doc:name="Set Payload" doc:id="9213c54b-79ec-46a0-853c-fab444017957" />
+							<ee:transform doc:name="Transform Message" doc:id="9475e657-4f1f-49bc-a10e-39386e18c3b9">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+read(payload, "application/json")]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+						</on-error-continue>
+					</error-handler>
+				</try>
+			</when>
+			<otherwise >
+				<ee:transform doc:name="Transform Message" doc:id="c37c448a-1492-4ca8-9030-b01bb8183c4b" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	error: "El cuerpo no es un JSON válido o el Content-Type no es 'application/json'"
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</otherwise>
+		</choice>
+	</flow>
+	<flow name="GET_Data1" doc:id="1e050705-1382-4a09-9e28-2f0b828759fb" >
+		<http:listener doc:name="Listener" doc:id="8788ad58-04bb-40aa-b582-ae5e68824e0b" config-ref="HTTP_Listener_config" path="/api/v1/sps/customers" allowedMethods="GET" />
+		<db:select doc:name="Select" doc:id="c17610a8-481b-4b58-9d32-6ea244461fbc" config-ref="Database_Config" >
+			<db:sql ><![CDATA[SELECT * FROM customers;]]></db:sql>
+		</db:select>
+		<ee:transform doc:name="Transform Message" doc:id="65b2479e-6ea9-4fa5-834c-e5fa9edb9808" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+</mule>
